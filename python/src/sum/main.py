@@ -1,6 +1,7 @@
 import os
 import logging
 import threading
+import zlib
 
 from common import middleware, message_protocol, fruit_item
 
@@ -98,10 +99,11 @@ class SumFilter:
             return
         totals = self.state.pop(client_id)["totals"]
         for final_fruit_item in totals.values():
-            for data_output_exchange in self.data_output_exchanges:
-                data_output_exchange.send(message_protocol.internal.serialize(
-                    [client_id, final_fruit_item.fruit, final_fruit_item.amount]
-                ))
+            key = aggregator_for(client_id, final_fruit_item.fruit)
+            logging.info(f"Broadcasting data messages enviando a {key}")
+            self.data_output_exchanges[key].send(message_protocol.internal.serialize(
+                [client_id, final_fruit_item.fruit, final_fruit_item.amount]
+            ))
         for data_output_exchange in self.data_output_exchanges:
             data_output_exchange.send(message_protocol.internal.serialize([client_id]))
 
@@ -113,6 +115,10 @@ class SumFilter:
     def start(self):
         threading.Thread(target=self.control_exchange_in.start_consuming, args=(self.process_control_message,),daemon=True,).start()
         self.input_queue.start_consuming(self.process_data_messsage)
+
+def aggregator_for(client_id, fruit):
+    key = f"{client_id}:{fruit}".encode()
+    return zlib.crc32(key) % AGGREGATION_AMOUNT
 
 def main():
     logging.basicConfig(level=logging.INFO)

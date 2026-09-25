@@ -23,10 +23,26 @@ class JoinFilter:
             MOM_HOST, OUTPUT_QUEUE
         )
 
+        self.partial_tops = {}
+        self.results_received = {} 
+
     def process_messsage(self, message, ack, nack):
-        logging.info("Received top")
-        fruit_top = message_protocol.internal.deserialize(message)
-        self.output_queue.send(message_protocol.internal.serialize(fruit_top))
+        logging.info(f"Received top {message}")
+        client_id, partial_top = message_protocol.internal.deserialize(message)
+        accumulated_top = self.partial_tops.setdefault(client_id, {})
+
+        for fruit, amount in partial_top:
+            accumulated_top[fruit] = accumulated_top.get(fruit, 0) + amount
+
+        self.results_received[client_id] = self.results_received.setdefault(client_id, 0) + 1
+
+        if self.results_received[client_id] == AGGREGATION_AMOUNT:
+            fruit_top = sorted(accumulated_top.items(), key=lambda x: x[1], reverse=True)[:TOP_SIZE]
+            logging.info(f"Sending final top {fruit_top}")
+            self.output_queue.send(message_protocol.internal.serialize([client_id, fruit_top]))
+            del self.partial_tops[client_id]
+            del self.results_received[client_id]
+             
         ack()
 
     def start(self):
