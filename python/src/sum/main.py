@@ -52,14 +52,16 @@ class SumFilter:
     def _process_data(self, client_id, fruit, amount):
         #logging.info(f"Process data")
         with self.lock:
-            client_totals = self.state.setdefault(client_id, {"totals": {}, "eof_total": None, "done_counts": {}})["totals"]
+            client_state = self._get_state(client_id)
+            client_totals = client_state["totals"]
             client_totals[fruit] = client_totals.get(
                 fruit, fruit_item.FruitItem(fruit, 0)
             ) + fruit_item.FruitItem(fruit, int(amount))
-            client_state = self.state[client_id]
             client_state["done_counts"][ID] = client_state["done_counts"].get(ID, 0) + 1
+
+            if client_state["eof_total"] is not None:
+                self._publish_done(client_id)
             self._maybe_flush(client_id)
-            self._publish_done(client_id)
 
     def _process_eof(self, client_id, total):
         logging.info(f"Broadcasting data messages")
