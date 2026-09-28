@@ -58,11 +58,10 @@ class AggregationFilter:
             )
         )
 
-        logging.info(f"{fruit_top}")
         self.output_queue.send(message_protocol.internal.serialize([client_id, fruit_top]))
         
     def process_messsage(self, message, ack, nack):
-        logging.info(f"Process message {message}")
+        logging.info(f"Process message")
         fields = message_protocol.internal.deserialize(message)
         if len(fields) == 3:
             self._process_data(*fields)

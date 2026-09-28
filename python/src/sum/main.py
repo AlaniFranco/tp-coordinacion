@@ -55,7 +55,7 @@ class SumFilter:
         )
 
     def _process_data(self, client_id, fruit, amount):
-        #logging.info(f"Process data")
+        logging.info(f"Process data")
         with self.lock:
             client_state = self._get_state(client_id)
             client_totals = client_state["totals"]
@@ -107,7 +107,7 @@ class SumFilter:
         totals = self.state.pop(client_id)["totals"]
         for final_fruit_item in totals.values():
             key = aggregator_for(client_id, final_fruit_item.fruit)
-            logging.info(f"Broadcasting data messages enviando a {key}")
+            logging.info(f"Broadcasting data messages sending a {key}")
             self.data_output_exchanges[key].send(message_protocol.internal.serialize(
                 [client_id, final_fruit_item.fruit, final_fruit_item.amount]
             ))
