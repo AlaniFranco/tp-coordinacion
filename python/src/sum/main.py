@@ -2,6 +2,7 @@ import os
 import logging
 import threading
 import zlib
+import signal
 
 from common import middleware, message_protocol, fruit_item
 
@@ -36,6 +37,10 @@ class SumFilter:
 
         self.lock = threading.Lock()
         self.state = {} 
+
+    def _handle_sigterm(self, signum, frame):
+        logging.info("Received SIGTERM signal")
+        self.input_queue.stop_consuming()
 
     def _get_state(self, client_id):
         return self.state.setdefault(
@@ -115,8 +120,24 @@ class SumFilter:
         ack()
 
     def start(self):
+        signal.signal(signal.SIGTERM, self._handle_sigterm)
         threading.Thread(target=self.control_exchange_in.start_consuming, args=(self.process_control_message,),daemon=True,).start()
-        self.input_queue.start_consuming(self.process_data_messsage)
+        try:
+            self.input_queue.start_consuming(self.process_data_messsage)
+        finally:
+            self.close()
+
+    def close(self):
+        connections = [
+            self.input_queue,
+            self.control_exchange_out,
+            *self.data_output_exchanges,
+        ]
+        for connection in connections:
+            try:
+                connection.close()
+            except Exception as e:
+                logging.error(e)
 
 def aggregator_for(client_id, fruit):
     key = f"{client_id}:{fruit}".encode()

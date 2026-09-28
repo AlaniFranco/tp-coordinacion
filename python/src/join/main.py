@@ -1,5 +1,6 @@
 import os
 import logging
+import signal
 
 from common import middleware, message_protocol, fruit_item
 
@@ -26,6 +27,10 @@ class JoinFilter:
         self.partial_tops = {}
         self.results_received = {} 
 
+    def _handle_sigterm(self, signum, frame):
+        logging.info("Received SIGTERM signal")
+        self.input_queue.stop_consuming()
+
     def process_messsage(self, message, ack, nack):
         logging.info(f"Received top {message}")
         client_id, partial_top = message_protocol.internal.deserialize(message)
@@ -46,8 +51,18 @@ class JoinFilter:
         ack()
 
     def start(self):
-        self.input_queue.start_consuming(self.process_messsage)
+        signal.signal(signal.SIGTERM, self._handle_sigterm)
+        try:
+            self.input_queue.start_consuming(self.process_messsage)
+        finally:
+            self.close()
 
+    def close(self):
+        for connection in (self.input_queue, self.output_queue):
+            try:
+                connection.close()
+            except Exception as e:
+                logging.error(e)
 
 def main():
     logging.basicConfig(level=logging.INFO)

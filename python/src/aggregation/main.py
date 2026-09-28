@@ -1,6 +1,7 @@
 import os
 import logging
 import bisect
+import signal
 
 from common import middleware, message_protocol, fruit_item
 
@@ -25,6 +26,10 @@ class AggregationFilter:
         )
         self.fruit_top = {}
         self.eofs_received = {} 
+
+    def _handle_sigterm(self, signum, frame):
+        logging.info("Received SIGTERM signal")
+        self.input_exchange.stop_consuming()
 
     def _process_data(self, client_id, fruit, amount):
         logging.info("Processing data message")
@@ -65,8 +70,20 @@ class AggregationFilter:
             self._process_eof(*fields)
         ack()
 
+
     def start(self):
-        self.input_exchange.start_consuming(self.process_messsage)
+        signal.signal(signal.SIGTERM, self._handle_sigterm)
+        try:
+            self.input_exchange.start_consuming(self.process_messsage)
+        finally:
+            self.close()
+
+    def close(self):
+        for connection in (self.input_exchange, self.output_queue):
+            try:
+                connection.close()
+            except Exception as e:
+                logging.error(e)
 
 
 def main():
