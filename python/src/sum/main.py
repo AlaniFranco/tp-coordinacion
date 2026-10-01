@@ -42,6 +42,9 @@ class SumFilter:
         logging.info("Received SIGTERM signal")
         self.input_queue.stop_consuming()
 
+    # totals: acumulado de este Sum para ese cliente.
+    # eof_total: cantidad total de registros que el cliente procesó, None mientras no se conoce.
+    # done_counts: {sum_id: conteo} conteo de datos procesados por cada Sum
     def _get_state(self, client_id):
         return self.state.setdefault(
             client_id, {"totals": {}, "eof_total": None, "done_counts": {}}
@@ -74,10 +77,11 @@ class SumFilter:
             message_protocol.internal.serialize(["EOF", client_id, total])
         )
 
+    # En esta funcion se reciben los mensajes de EOF y DONE
     def _process_control(self, message):
         kind, client_id, *rest = message_protocol.internal.deserialize(message)
         with self.lock:
-            client_state = self.state.setdefault(client_id, {"totals": {}, "eof_total": None, "done_counts": {}})
+            client_state = self._get_state(client_id)
             if kind == "EOF":
                 [total] = rest
                 client_state["eof_total"] = total
@@ -96,6 +100,9 @@ class SumFilter:
             self._process_eof(*fields)
         ack()
 
+    # Solo se hace flush cuando es seguro que no queda ningún dato de este cliente sin procesar en ningún Sum,
+    # comparando los conteos de datos procesados de cada sum con el total del eof. 
+    # Al final se envia un EOF a todos los aggregators
     def _maybe_flush(self, client_id):
         client_state = self.state[client_id]
         if client_state["eof_total"] is None:
@@ -121,7 +128,9 @@ class SumFilter:
 
     def start(self):
         signal.signal(signal.SIGTERM, self._handle_sigterm)
-        threading.Thread(target=self.control_exchange_in.start_consuming, args=(self.process_control_message,),daemon=True,).start()
+        threading.Thread(
+            target=self.control_exchange_in.start_consuming, args=(self.process_control_message,),daemon=True,
+            ).start()
         try:
             self.input_queue.start_consuming(self.process_data_messsage)
         finally:
